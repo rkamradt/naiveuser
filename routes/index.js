@@ -1,80 +1,84 @@
-var express = require('express')
-var router = express.Router()
-var Redis = require('ioredis')
-var uuidv1 = require('uuid/v1')
-var bcrypt = require('bcrypt')
-var fetch = require('node-fetch')
+const express = require('express')
+const router = express.Router()
+const User = require('./User')
+const bcrypt = require('bcrypt')
 
-var client = new Redis(6379, 'redis')
+const returnStatus = (res, err) => {
+  console.log('in returnStatus err = ' + JSON.stringify(err))
+  var code = 400
+  if(err === "not found") code = 404
+  if(err === "forbidden") code = 403
+  res.status(code).send(err)
+}
 
 /* GET list of users */
-router.get('/users', (req, res, next) => {
-  client.keys('users:*', (err, ids) => {
-    if(err) return next(err);
-    return res.send(JSON.stringify(ids)).end()
+router.get('/users', (req, res) => {
+  User.getAllUsers((err, ids) => {
+    if(err) return returnStatus(res, err)
+    return res.send(ids)
   })
 })
 /* GET specific user */
-router.get('/users/:id', (req, res, next) => {
+router.get('/users/:user', (req, res) => {
   if(!req.headers.password) {
-    return res.status(403).send('password header required').end();
+    return res.status(403).send('password header required')
   }
-  client.get('users:' + req.params.id, (err, data) => {
-    if(err) return next(err)
-    if(!data) return res.status(404).send('user not found').end()
-    data = JSON.parse(data)
-    bcrypt.compare(req.headers.password, data.hash, (err, valid) => {
-      if(err) return next(err);
-      if(valid) {
-        var user = {
-          username: data.username,
-          fullname: data.fullname,
-          email: data.email,
-          walletId: data.walletId
-        }
-        return res.send(user).end()
-      }
-      return res.status(403).send('none shall pass').end()
-    })
+  User.isValid(req.params.user, req.headers.password, (err, user) => {
+    if(err) return returnStatus(res, err)
+    if(!user) return res.status(404).send('user not found')
+    user.hash = null
+    return res.send(user)
   })
 })
 /* create new user */
 router.post('/users', (req, res) => {
   bcrypt.hash(req.body.password, 10, (err, hash) => {
-    var user = {
-      username: req.body.username,
-      fullname: req.body.fullname,
-      email: req.body.email,
-      hash: hash,
-      walletId: null
-    }
-    const data = JSON.stringify({ // naive coin requires passwords with at least five words:
-      password: user.username + ' ' + user.email + ' ' + user.hash + ' two more words'
+    const user = new User(req.body.username,req.body.fullname,req.body.email,hash)
+    user.saveUser(err => {
+      if(err) return returnStatus(res, err)
+      user.hash = null
+      res.status(201).send(user)
     })
-    fetch('http://naivecoin:3001/operator/wallets', {
-      method: 'POST',
-      body: data,
-      headers:{
-        'Content-Type': 'application/json',
-        'accepts': 'application/json'
-      }
-    }).then(response => {
-        if (!response.ok) {
-          console.log("error returned from naivecoin " + response.statusText);
-          throw Error(response.statusText);
-        }
-        return response.json()
-      })
-      .then(data => {
-        console.log("created wallet with id " + data.id)
-        user.walletId = data.id; // save the wallet id for later
-        client.set('users:' + req.body.username, JSON.stringify(user))
-        res.status(201).end()
-      })
-      .catch(err => {
-        console.log("error returned from naivecoin " + err);
-        res.status(502).end(); // use bad gateway to indicate unexpectedly failed upstream service
-      })
+  })
+})
+
+/* GET list of accounts for a user */
+router.get('/users/:user/accounts', (req, res) => {
+  if(!req.headers.password) {
+    return res.status(403).send('password header required')
+  }
+  User.isValid(req.params.user, req.headers.password, (err, user) => {
+    if(err) return returnStatus(res, err)
+    if(!user) return res.status(404).send('user not found')
+    res.send(user.accounts)
+  })
+})
+/* GET specific account */
+router.get('/users/:user/accounts/:id', (req, res) => {
+  if(!req.headers.password) {
+    return res.status(403).send('password header required')
+  }
+  User.isValid(req.params.user, req.headers.password, (err, user) => {
+    if(err) return returnStatus(res, err)
+    if(!user) return res.status(404).send('user not found')
+    user.getAccount(req.params.id, (err, account) => {
+      if(err) return returnStatus(res, err)
+      res.send(account)
+    })
+  })
+})
+/* create new account for a user */
+router.post('/users/:user/accounts', (req, res) => {
+  if(!req.headers.password) {
+    return res.status(403).send('password header required')
+  }
+  User.isValid(req.params.user, req.headers.password, (err, user) => {
+    if(err) return returnStatus(res, err)
+    if(!user) return res.status(404).send('user not found')
+    user.saveAccount((err, account) => {
+      if(err) return returnStatus(err)
+      res.send(account)
+    })
   })
 })
 
