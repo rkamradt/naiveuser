@@ -8,6 +8,7 @@ const returnStatus = (res, err) => {
   var code = 400
   if(err === "not found") code = 404
   if(err === "forbidden") code = 403
+  if(err.startsWith('error returned from naivecoin')) code = 502
   res.status(code).send(err)
 }
 
@@ -78,6 +79,43 @@ router.post('/users/:user/accounts', (req, res) => {
     user.saveAccount((err, account) => {
       if(err) return returnStatus(err)
       res.send(account)
+    })
+  })
+})
+/* mine some coin */
+router.post('/users/:user/accounts/:id/mine', (req, res) => {
+  if(!req.headers.password) {
+    return res.status(403).send('password header required')
+  }
+  User.isValid(req.params.user, req.headers.password, (err, user) => {
+    if(err) return returnStatus(res, err)
+    if(!user) return res.status(404).send('user not found')
+    user.getAccount(req.params.id, (err, account) => {
+      if(err) return returnStatus(res, err)
+      user.mine(account, (err) => {
+        if(err) return returnStatus(res, err)
+        res.send(account)
+      })
+    })
+  })
+})
+
+/* transfer some coin */
+router.post('/users/:user/accounts/:id/transfer', (req, res) => {
+  if(!req.headers.password) {
+    return res.status(403).send('password header required')
+  }
+  User.isValid(req.params.user, req.headers.password, (err, user) => {
+    if(err) return returnStatus(res, err)
+    if(!user) return res.status(404).send('user not found')
+    user.getAccount(req.params.id, (err, account) => {
+      if(err) return returnStatus(res, err)
+      user.getAccount(req.body.toAccount, (err, toAccount) => {
+        user.transfer(account, toAccount, req.body.amount, (err) => {
+          if(err) return returnStatus(res, err)
+          res.send(account)
+        })
+      })
     })
   })
 })

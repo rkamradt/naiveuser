@@ -26,7 +26,8 @@ module.exports = class User {
       body: data,
       headers:{
         'Content-Type': 'application/json',
-        'accepts': 'application/json'
+        'accepts': 'application/json',
+        'Cache-Control': 'no-store'
       }
     }).then(response => {
       if (!response.ok) {
@@ -39,7 +40,7 @@ module.exports = class User {
       client.set(userKey + user.username, JSON.stringify(user))
       return next(null);
     }).catch(err => {
-      console.log("error returned from naivecoin " + err)
+      console.log('error returned from naivecoin ' + err)
       return next(err);
     })
   }
@@ -54,7 +55,7 @@ module.exports = class User {
           const user = new User(data.username, data.fullname, data.email, data.hash, data.walletId, data.accounts)
           return next(null, user)
         }
-        return next("forbidden")
+        return next('forbidden')
       })
     })
   }
@@ -78,7 +79,8 @@ module.exports = class User {
       headers:{
         'password': user.getWalletPassword(),
         'Content-Type': 'application/json',
-        'accepts': 'application/json'
+        'accepts': 'application/json',
+        'Cache-Control': 'no-store'
       }
     }).then(response => {
       if (!response.ok) {
@@ -90,16 +92,109 @@ module.exports = class User {
       const account = {
         id: uuidv1(),
         username: user.username,
-        addressId: data.address
+        addressId: data.address,
+        balance: 0
       }
       user.accounts.push(account.id)
       client.set(userKey + user.username, JSON.stringify(user))
       client.set(accountKey + account.id, JSON.stringify(account))
       next(null, account)
     }).catch(err => {
-      console.log("error returned from naivecoin " + err);
+      console.log('error returned from naivecoin ' + err);
       next(err);
     })
+  }
+  mine(account, next) {
+    const user = this
+    const data = JSON.stringify({
+      rewardAddress: account.addressId
+    })
+    fetch('http://naivecoin:3001/miner/mine', {
+      method: 'POST',
+      body: data,
+      headers:{
+        'Content-Type': 'application/json',
+        'accepts': 'application/json',
+        'Cache-Control': 'no-store'
+      }
+    }).then(response => {
+      if (!response.ok) {
+        console.log('error returned from naivecoin ' + response.statusText);
+        throw Error(response.statusText);
+      }
+      return response.json()
+    }).then(data => {
+      user.setBalance(account, (err) => {
+        if(err) return next(err)
+        next(null, account)
+      })
+    }).catch(err => {
+      console.log('error returned from naivecoin ' + err);
+      next(err);
+    })
+  }
+  transfer(fromAccount, toAccount, amount, next) {
+    const user = this
+    if(fromAccount.amount < amount) {
+      return next('insufficient funds')
+    }
+    const data = JSON.stringify({
+      fromAddress: fromAccount.addressId,
+      toAddress: toAccount.addressId,
+      amount: amount,
+      changeAddress: fromAccount.addressId
+    })
+    fetch('http://naivecoin:3001/operator/wallets/'+user.walletId+'/transactions', {
+      method: 'POST',
+      body: data,
+      headers:{
+        'password': user.getWalletPassword(),
+        'Content-Type': 'application/json',
+        'accepts': 'application/json',
+        'Cache-Control': 'no-store'
+      }
+    }).then(response => {
+      if (!response.ok) {
+        console.log("error returned from naivecoin " + response.statusText);
+        throw Error(response.statusText);
+      }
+      return response.json()
+    }).then(data => {
+      user.setBalance(fromAccount, (err) => {
+        if(err) return next(err)
+        user.setBalance(toAccount, (err) => {
+          if(err) return next(err)
+          next(null, fromAccount)
+        })
+      })
+    }).catch(err => {
+      console.log('error returned from naivecoin ' + err);
+      next(err);
+    })
+  }
+  setBalance(account, next) {
+    fetch('http://naivecoin:3001/operator/'+account.addressId+'/balance', {
+      method: 'GET',
+      headers:{
+        'Content-Type': 'application/json',
+        'accepts': 'application/json',
+        'Cache-Control': 'no-store'
+      }
+    }).then(response => {
+      if (!response.ok) {
+        console.log('error returned from naivecoin ' + response.statusText);
+        throw Error(response.statusText);
+      }
+      return response.json()
+    }).then(data => {
+      account.balance = data.balance
+      client.set(accountKey + account.id, JSON.stringify(account))
+      next(null)
+    }).catch(err => {
+      console.log('error returned from naivecoin ' + err);
+      next(err);
+    })
+
   }
   getWalletPassword() {// naive coin requires passwords with at least five words:
     return this.username + ' ' + this.email + ' ' + this.hash + ' two more words'
