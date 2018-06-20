@@ -33,7 +33,9 @@ router.get('/users/:user', (req, res) => {
 })
 /* create new user */
 router.post('/users', (req, res) => {
+  if(!req.body.password) return res.status(400).send('password is required')
   bcrypt.hash(req.body.password, 10, (err, hash) => {
+    if(!req.body.username) return res.status(400).send('username is required')
     const user = new User(req.body.username,req.body.fullname,req.body.email,hash)
     user.saveUser(err => {
       if(err) return returnStatus(res, err)
@@ -105,6 +107,8 @@ router.post('/users/:user/accounts/:id/transfer', (req, res) => {
   if(!req.headers.password) {
     return res.status(403).send('password header required')
   }
+  if(!req.body.toAccount) return res.status(400).send('toAccount is required')
+  if(!req.body.amount) return res.status(400).send('amount is required')
   User.isValid(req.params.user, req.headers.password, (err, user) => {
     if(err) return returnStatus(res, err)
     if(!user) return res.status(404).send('user not found')
