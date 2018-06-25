@@ -124,6 +124,7 @@ module.exports = class User {
       }
       return response.json()
     }).then(data => {
+      console.log('data mined : ' + JSON.stringify(data))
       user.setBalance(account, (err) => {
         if(err) return next(err)
         next(null, account)
@@ -188,6 +189,7 @@ module.exports = class User {
       return response.json()
     }).then(data => {
       account.balance = data.balance
+      console.log('setting balance on account ' + account.id + ' to ' + account.balance)
       client.set(accountKey + account.id, JSON.stringify(account))
       next(null)
     }).catch(err => {
