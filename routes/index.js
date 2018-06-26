@@ -8,7 +8,7 @@ const returnStatus = (res, err) => {
   var code = 400
   if(err === "not found") code = 404
   if(err === "forbidden") code = 403
-  if(err.startsWith('error returned from naivecoin')) code = 502
+  if(err && err.toString().startsWith('error returned from naivecoin')) code = 502
   res.status(code).send(err)
 }
 
