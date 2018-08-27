@@ -1,6 +1,5 @@
 const Redis = require('ioredis')
 const uuidv1 = require('uuid/v1')
-const bcrypt = require('bcrypt')
 const fetch = require('node-fetch')
 
 const client = new Redis(6379, 'redis')
@@ -8,13 +7,13 @@ const userKey = 'users:'
 const accountKey = 'account:'
 
 module.exports = class User {
-  constructor(username, fullname, email, hash, walletId, accounts) {
+  constructor(username, fullname, email, walletId, accounts) {
     this.username = username
     this.fullname = fullname
     this.email = email
-    this.hash = hash
     this.walletId = walletId
     this.accounts = accounts ? accounts : []
+    this.id = uuidv1()
   }
   saveUser(next) {
     const data = JSON.stringify({
@@ -44,19 +43,13 @@ module.exports = class User {
       return next(err);
     })
   }
-  static isValid(userId, password, next) {
+  static isValid(userId, next) {
     client.get(userKey + userId, (err, data) => {
       if(err) return next(err)
-      if(!data) return next("not found")
+      if(!data) return next(null, null)
       data = JSON.parse(data)
-      bcrypt.compare(password, data.hash, (err, valid) => {
-        if(err) return next(err)
-        if(valid) {
-          const user = new User(data.username, data.fullname, data.email, data.hash, data.walletId, data.accounts)
-          return next(null, user)
-        }
-        return next('forbidden')
-      })
+      const user = new User(data.username, data.fullname, data.email, data.walletId, data.accounts)
+      return next(null, user)
     })
   }
   static getAllUsers(next) {
@@ -199,6 +192,6 @@ module.exports = class User {
 
   }
   getWalletPassword() {// naive coin requires passwords with at least five words:
-    return this.username + ' ' + this.email + ' ' + this.hash + ' two more words'
+    return this.username + ' ' + this.email + ' ' + this.id + ' two more words'
   }
 }
